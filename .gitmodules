@@ -1,0 +1,3 @@
+[submodule "compute-mfcc"]
+	path = compute-mfcc
+	url = https://github.com/dspavankumar/compute-mfcc.git
