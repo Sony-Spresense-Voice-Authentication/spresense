@@ -9,7 +9,7 @@
 class MFCC
 {
 public:
-    MFCC(int sampleRate = 16000, int nfft = 512, int nfilt = 26, int numCeps = 13,
+    MFCC(int sampleRate = 16000, int nfft = 2048, int nfilt = 26, int numCeps = 13,
          float preemph = 0.97, float lowFreq = 0, float highFreq = NULL,
          bool appendEnergy = true)
         : sampleRate(sampleRate), nfft(nfft), nfilt(nfilt), numCeps(numCeps),

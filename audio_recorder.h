@@ -35,7 +35,6 @@ private:
 
 public:
   void wav_recorder() {
-    Serial.begin(115200);
 
     while (!theSD.begin()) {
       Serial.println("Insert SD card.");
@@ -46,7 +45,6 @@ public:
     theAudio->begin(audio_attention_cb);
     puts("Initialization of Audio Library");
     theAudio->setRecorderMode(AS_SETRECDR_STS_INPUTDEVICE_MIC, volume_gain_db);
-  
 
     theAudio->initRecorder(AS_CODECTYPE_WAV, "/mnt/sd0/BIN", recoding_sampling_rate, recoding_bit_length, recoding_cannel_number);
     puts("Recorder Initialized!");
