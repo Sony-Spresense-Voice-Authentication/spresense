@@ -3,154 +3,106 @@
 
 #include <SDHCI.h>
 #include <Audio.h>
-#include <vector>
+#include <arch/board/board.h>
 
-class AudioRecorder
-{
-public:
-    AudioRecorder() : sd(nullptr), audio(nullptr), isRecording(false), errorOccurred(false) {}
+#define RECORD_FILE_NAME "compare.wav"
 
-    ~AudioRecorder()
-    {
-        if (audio)
-        {
-            audio->setReadyMode();
-            audio->end();
-            // delete audio;
-        }
-        if (sd)
-        {
-            delete sd;
-        }
-    }
-
-    bool begin()
-    {
-        sd = new SDClass();
-        while (!sd->begin())
-        {
-            Serial.println("Insert SD card.");
-            delay(1000);
-        }
-
-        audio = AudioClass::getInstance();
-        audio->begin(audioAttentionCallback);
-
-        audio->setRecorderMode(AS_SETRECDR_STS_INPUTDEVICE_MIC);
-        audio->initRecorder(AS_CODECTYPE_WAV,
-                            "/mnt/sd0/BIN",
-                            SAMPLING_RATE,
-                            BIT_DEPTH,
-                            CHANNEL_COUNT);
-
-        return true;
-    }
-
-    bool startRecording(const char *filename, uint32_t duration_ms)
-    {
-        if (isRecording)
-        {
-            return false;
-        }
-
-        if (sd->exists(filename))
-        {
-            sd->remove(filename);
-        }
-
-        recordFile = sd->open(filename, FILE_WRITE);
-        if (!recordFile)
-        {
-            Serial.println("File open error");
-            return false;
-        }
-
-        audio->writeWavHeader(recordFile);
-        audio->startRecorder();
-        isRecording = true;
-
-        uint32_t startTime = millis();
-        uint32_t recordingSize = (SAMPLING_RATE * CHANNEL_COUNT * BIT_DEPTH / 8) * (duration_ms / 1000);
-
-        while (audio->getRecordingSize() < recordingSize && !errorOccurred)
-        {
-            err_t err = audio->readFrames(recordFile);
-            if (err != AUDIOLIB_ECODE_OK)
-            {
-                break;
-            }
-        }
-
-        stopRecording();
-        return true;
-    }
-
-    bool stopRecording()
-    {
-        if (!isRecording)
-        {
-            return false;
-        }
-
-        audio->stopRecorder();
-        audio->readFrames(recordFile);
-        audio->closeOutputFile(recordFile);
-        recordFile.close();
-        isRecording = false;
-
-        // Read recorded audio data
-        File readFile = sd->open(recordFile.name(), FILE_READ);
-        if (!readFile)
-        {
-            Serial.println("Failed to open file for reading");
-            return false;
-        }
-
-        // Skip WAV header
-        readFile.seek(44);
-
-        // Read audio data
-        int16_t sample;
-        recordedAudio.clear();
-        while (readFile.available() >= 2)
-        {
-            readFile.read(reinterpret_cast<uint8_t *>(&sample), 2);
-            recordedAudio.push_back(static_cast<float>(sample) / 32768.0f);
-        }
-
-        readFile.close();
-        return true;
-    }
-
-    std::vector<float> getRecordedAudio()
-    {
-        return recordedAudio;
-    }
-
+class AudioRecorder {
 private:
-    static void audioAttentionCallback(const ErrorAttentionParam *atprm)
-    {
-        Serial.println("Attention!");
-        if (atprm->error_code >= AS_ATTENTION_CODE_WARNING)
-        {
-            Serial.println("Error occurred");
-            // Set a flag to indicate an error occurred
-            // Note: This is a static method, so we can't access instance variables directly
-            // You may need to implement a different error handling mechanism
-        }
+  SDClass theSD;
+  AudioClass *theAudio;
+
+  File myFile;
+
+  static bool ErrEnd;
+
+  static void audio_attention_cb(const ErrorAttentionParam *atprm) {
+    puts("Attention!");
+
+    if (atprm->error_code >= AS_ATTENTION_CODE_WARNING) {
+      ErrEnd = true;
+    }
+  }
+
+  const uint32_t recoding_sampling_rate = 48000;
+  const uint8_t recoding_cannel_number = 1;
+  const uint8_t recoding_bit_length = 16;
+  const uint32_t recoding_time = 5;
+  const int32_t recoding_byte_per_second = recoding_sampling_rate * recoding_cannel_number * recoding_bit_length / 8;
+  const int32_t recoding_size = recoding_byte_per_second * recoding_time;
+  /* Volume gain in decibels */
+  const int32_t volume_gain_db = 210; // Adjust gain as needed
+
+public:
+  void wav_recorder() {
+    Serial.begin(115200);
+
+    while (!theSD.begin()) {
+      Serial.println("Insert SD card.");
+      delay(1000);
     }
 
-    SDClass *sd;
-    AudioClass *audio;
-    File recordFile;
+    theAudio = AudioClass::getInstance();
+    theAudio->begin(audio_attention_cb);
+    puts("Initialization of Audio Library");
+    theAudio->setRecorderMode(AS_SETRECDR_STS_INPUTDEVICE_MIC, volume_gain_db);
+  
 
-    static const uint32_t SAMPLING_RATE = 16000;
-    static const uint8_t CHANNEL_COUNT = 1;
-    static const uint8_t BIT_DEPTH = 16;
+    theAudio->initRecorder(AS_CODECTYPE_WAV, "/mnt/sd0/BIN", recoding_sampling_rate, recoding_bit_length, recoding_cannel_number);
+    puts("Recorder Initialized!");
 
-    std::vector<float> recordedAudio;
-    bool isRecording;
-    bool errorOccurred;
+    if (theSD.exists(RECORD_FILE_NAME)) {
+      printf("Removing existing file [%s].\n", RECORD_FILE_NAME);
+      theSD.remove(RECORD_FILE_NAME);
+    }
+
+    myFile = theSD.open(RECORD_FILE_NAME, FILE_WRITE);
+    if (!myFile) {
+      printf("File open error\n");
+      exit(1);
+    }
+
+    printf("File opened! [%s]\n", RECORD_FILE_NAME);
+    theAudio->writeWavHeader(myFile);
+    puts("WAV Header written!");
+    theAudio->startRecorder();
+    puts("Recording started!");
+
+    while (true) {
+      err_t err;
+
+      if (theAudio->getRecordingSize() > recoding_size) {
+        theAudio->stopRecorder();
+        delay(1000);
+        err = theAudio->readFrames(myFile);
+        break;
+      }
+
+      err = theAudio->readFrames(myFile);
+
+      if (err != AUDIOLIB_ECODE_OK) {
+        printf("Recording Error! Code = %d\n", err);
+        theAudio->stopRecorder();
+        break;
+      }
+
+      if (ErrEnd) {
+        printf("Error detected, stopping recording.\n");
+        theAudio->stopRecorder();
+        break;
+      }
+
+      delay(100);
+    }
+
+    theAudio->closeOutputFile(myFile);
+    myFile.close();
+    theAudio->setReadyMode();
+    theAudio->end();
+    puts("Recording ended.");
+  }
 };
+
+bool AudioRecorder::ErrEnd = false;
 
 #endif // AUDIO_RECORDER_H
