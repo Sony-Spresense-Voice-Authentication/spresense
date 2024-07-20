@@ -1,0 +1,4 @@
+#Ignore some noisy stuffs
+.DS_Store
+.idea/
+.vscode/
